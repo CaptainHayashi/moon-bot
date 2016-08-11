@@ -58,7 +58,7 @@ let toDateTime (timestamp:int) =
 // Type providers for accessing data
 // ----------------------------------------------------------------------------
 
-type BBC = XmlProvider<"http://feeds.bbci.co.uk/news/rss.xml">
+type RSS = XmlProvider<"http://feeds.bbci.co.uk/news/rss.xml">
 type Stocks = CsvProvider<"http://ichart.finance.yahoo.com/table.csv?s=MSFT">
 type Weather = JsonProvider<"http://api.openweathermap.org/data/2.5/forecast/daily?q=Prague&mode=json&units=metric&cnt=10&APPID=cb63a1cf33894de710a1e3a64f036a27">
 type Urban = JsonProvider<"http://api.urbandictionary.com/v0/define?term=hayashi">
@@ -77,6 +77,16 @@ type Giphy = JsonProvider<"http://api.giphy.com/v1/gifs/search?q=funny+cat&api_k
 // Producing answers
 // ----------------------------------------------------------------------------
 
+let rss provider =
+  async {
+    let! res = RSS.AsyncLoad provider
+    let items =
+      [ for r in res.Channel.Items ->
+          sprintf "<dt><a href=\"%s\">%s</a></dt><dd>%s</dd>" r.Link r.Title r.Description ]
+    let body = items |> Seq.take 10 |> String.concat ""
+    return sprintf "<dl>%s</dl>" body
+  }
+
 let answer (question:string) =
   async {
     let words = question.ToLower().Split(' ') |> List.ofSeq
@@ -89,13 +99,8 @@ let answer (question:string) =
                 (r.Date.ToString("D")) r.Open ]
         let body = items |> Seq.take 10 |> String.concat ""
         return sprintf "<ul>%s</ul>" body
-    | "news" :: [] ->
-        let! res = BBC.AsyncGetSample()
-        let items =
-          [ for r in res.Channel.Items ->
-              sprintf "<dt><a href=\"%s\">%s</a></dt><dd>%s</dd>" r.Link r.Title r.Description ]
-        let body = items |> Seq.take 10 |> String.concat ""
-        return sprintf "<dl>%s</dl>" body
+    | "news" :: [] -> return! (rss "https://feeds.bbci.co.uk/news/rss.xml")
+    | "yc" :: [] -> return! (rss "https://news.ycombinator.com/rss")
     | "weather" :: place :: [] ->
       let! res = Weather.AsyncLoad(weatherUrl place)
       let items =
