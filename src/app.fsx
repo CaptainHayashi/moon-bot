@@ -33,6 +33,17 @@ let weatherUrl (place:string) =
     HttpUtility.UrlEncode(place) +
     "&mode=json&units=metric&cnt=10&APPID=cb63a1cf33894de710a1e3a64f036a27"
 
+/// Creates a URL for getting urban dictionary definitions
+let urbanUrl (term:string) =
+  "http://api.urbandictionary.com/v0/define?term=" +
+    HttpUtility.UrlEncode(term)
+
+/// Creates a URL for getting GIFs from Giphy
+let giphyUrl (term:string) =
+  sprintf "http://api.giphy.com/v1/gifs/search?q=%s&api_key=%s"
+    (HttpUtility.UrlEncode(term))
+    "dc6zaTOxFJmzC" // beta API key
+
 /// Creates a URL for getting stock prices form Yahooo
 let stocksUrl stock =
   "http://ichart.finance.yahoo.com/table.csv?s=" + stock
@@ -49,80 +60,76 @@ let toDateTime (timestamp:int) =
 
 type BBC = XmlProvider<"http://feeds.bbci.co.uk/news/rss.xml">
 type Stocks = CsvProvider<"http://ichart.finance.yahoo.com/table.csv?s=MSFT">
+type Weather = JsonProvider<"http://api.openweathermap.org/data/2.5/forecast/daily?q=Prague&mode=json&units=metric&cnt=10&APPID=cb63a1cf33894de710a1e3a64f036a27">
+type Urban = JsonProvider<"http://api.urbandictionary.com/v0/define?term=hayashi">
+type Giphy = JsonProvider<"http://api.giphy.com/v1/gifs/search?q=funny+cat&api_key=dc6zaTOxFJmzC">
 
 
 // ----------------------------------------------------------------------------
 // Web server and query answering
 // ----------------------------------------------------------------------------
 
-// TASK #1: Below is a sample function that uses the XML type provider to 
-// print BBC news. Follow the example of handling `stock MSFT` request in the
-// `answer` function and adapt the code below so that the bot returns nicely
-// formatted news when the user sends us `news` request:
-
-let printNews () = 
-  let res = BBC.GetSample()
-  let items = 
-    [ for r in res.Channel.Items -> 
-        sprintf " - %s" r.Title ] 
-  let body = items |> Seq.take 10 |> String.concat ""
-  printf "<ul>%s</ul>" body
-
-
-// TASK #2: Add handler for weather forecast. To do this, use `JsonProvider` using
-// the sample URL below (similar to XML and CSV). Then use `YourType.Load` to
-// get weather forecast for a place (using `weatherUrl` to get the right URL)
-// The resulting type has various properties - you'll find forecast in 
-// `res.List` (where each item has `it.Temp.Day` etc.). You can also use 
-// `toDateTime` (above) to convert the returned timestamps from `Dt`.
-// 
-// Sample URL for JsonProvider:
-//  - http://api.openweathermap.org/data/2.5/forecast/daily?q=Prague&mode=json&units=metric&cnt=10&APPID=cb63a1cf33894de710a1e3a64f036a27
-// More information about JsonProvider:
-//  - http://fsharp.github.io/FSharp.Data/library/JsonProvider.html 
-
-
-// TASK #3: When calling 3rd party services, we are currently blocking system
-// threads - this will not scale and we should do this asynchronously. 
-// To do this, wrap the body of the `answer` function in `async { ... }` 
-// block and add `return` keyword to return data. Then you can change
-// calls to `Load` to `AsyncLoad` and `GetSample` to `AsyncGetSample`
-// and call them using `let!` keyword. Also call `answer` using `let!` in 
-// the main body of the server. 
-//
-// More information about async:
-// - https://msdn.microsoft.com/en-us/visualfsharpdocs/conceptual/asynchronous-workflows-%5Bfsharp%5D
-
-
 // TASK #4: For more see 'math.fs'. This implements a simple evaluator
 // of binary expressions using parser combinators. The possibilities are
 // limitless :-)
-
 
 // ----------------------------------------------------------------------------
 // Producing answers
 // ----------------------------------------------------------------------------
 
-let answer (question:string) = 
-  let words = question.ToLower().Split(' ') |> List.ofSeq
-  match words with
-  | "stock" :: stock :: [] ->
-      let res = Stocks.Load(stocksUrl stock)
-      let items = 
-        [ for r in res.Rows -> 
-            sprintf "<li><strong>%s</strong>: %f</li>" 
-              (r.Date.ToString("D")) r.Open ] 
+let answer (question:string) =
+  async {
+    let words = question.ToLower().Split(' ') |> List.ofSeq
+    match words with
+    | "stock" :: stock :: [] ->
+        let! res = Stocks.AsyncLoad(stocksUrl stock)
+        let items =
+          [ for r in res.Rows ->
+              sprintf "<li><strong>%s</strong>: %f</li>"
+                (r.Date.ToString("D")) r.Open ]
+        let body = items |> Seq.take 10 |> String.concat ""
+        return sprintf "<ul>%s</ul>" body
+    | "news" :: [] ->
+        let! res = BBC.AsyncGetSample()
+        let items =
+          [ for r in res.Channel.Items ->
+              sprintf "<dt><a href=\"%s\">%s</a></dt><dd>%s</dd>" r.Link r.Title r.Description ]
+        let body = items |> Seq.take 10 |> String.concat ""
+        return sprintf "<dl>%s</dl>" body
+    | "weather" :: place :: [] ->
+      let! res = Weather.AsyncLoad(weatherUrl place)
+      let items =
+        [ for r in res.List ->
+            sprintf "<li><strong>%s</strong>: % .2f&deg;C</li>"
+              ((toDateTime r.Dt).ToString("D")) r.Temp.Day ]
       let body = items |> Seq.take 10 |> String.concat ""
-      sprintf "<ul>%s</ul>" body
-  
-  | "eval" :: cmds -> Math.eval (String.concat " " cmds)
-  | _ -> "Sorry Dave, I cannot do that." 
-
+      return sprintf "<ul>%s</ul>" body
+    | "urban" :: xs ->
+      let query = String.concat " " xs
+      let! res = Urban.AsyncLoad(urbanUrl query)
+      let items =
+        [ for r in res.List ->
+            sprintf "<dt><a href=\"%s\">%s</a> by %s (+%d -%d)</t><dd>%s</dd>"
+              r.Permalink r.Word r.Author r.ThumbsUp r.ThumbsDown r.Definition ]
+      let body = items |> String.concat ""
+      return sprintf "<dl>%s</dl>" body
+    | "giphy" :: xs ->
+      let query = String.concat " " xs
+      let! res = Giphy.AsyncLoad(giphyUrl query)
+      let items =
+        [ for r in res.Data ->
+            sprintf "<li><a href=\"%s\"><img src=\"%s\" alt=\"%s\"/></a></li>"
+              r.Url r.Images.FixedHeight.Url r.Id ]
+      let body = items |> Seq.truncate 5 |> String.concat ""
+      return sprintf "<ul>%s</ul>" body
+    | "eval" :: cmds -> return Math.eval (String.concat " " cmds)
+    | _ -> return "Sorry Dave, I cannot do that."
+  }
 
 let app =
   choose [
     path "/" >=> Files.browseFile root "index.html"
     path "/query" >=> fun ctx -> async {
-        let res = answer (HttpUtility.UrlDecode(ctx.request.rawQuery))
+        let! res = answer (HttpUtility.UrlDecode(ctx.request.rawQuery))
         return! Successful.OK res ctx }
     Files.browse root ]
