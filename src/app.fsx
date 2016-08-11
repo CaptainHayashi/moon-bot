@@ -19,25 +19,25 @@ open Suave.Operators
 // Various helper functions
 // ----------------------------------------------------------------------------
 
-// Find the 'web' directory with static files (like 'index.html'). This is 
+// Find the 'web' directory with static files (like 'index.html'). This is
 // a bit ugly, because it works differently locally and on Azure
-let root = 
-  let asm =  
+let root =
+  let asm =
     if System.Reflection.Assembly.GetExecutingAssembly().IsDynamic then __SOURCE_DIRECTORY__
     else IO.Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location)
   IO.Path.GetFullPath(Path.Combine(asm, "..", "web"))
 
-/// Creates a URL for getting wether forecaset from OpenWeatherMap 
-let weatherUrl (place:string) = 
+/// Creates a URL for getting wether forecaset from OpenWeatherMap
+let weatherUrl (place:string) =
   "http://api.openweathermap.org/data/2.5/forecast/daily?q=" +
     HttpUtility.UrlEncode(place) +
     "&mode=json&units=metric&cnt=10&APPID=cb63a1cf33894de710a1e3a64f036a27"
 
 /// Creates a URL for getting stock prices form Yahooo
-let stocksUrl stock = 
+let stocksUrl stock =
   "http://ichart.finance.yahoo.com/table.csv?s=" + stock
 
-/// Turn Unix timestamp into .NET DataTime object     
+/// Turn Unix timestamp into .NET DataTime object
 let toDateTime (timestamp:int) =
   let start = DateTime(1970,1,1,0,0,0,DateTimeKind.Utc)
   start.AddSeconds(float timestamp).ToLocalTime()
@@ -100,7 +100,7 @@ let printNews () =
 
 
 // ----------------------------------------------------------------------------
-// Producing answers 
+// Producing answers
 // ----------------------------------------------------------------------------
 
 let answer (question:string) = 
